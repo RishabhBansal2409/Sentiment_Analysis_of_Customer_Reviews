@@ -1,0 +1,322 @@
+---
+title: "Text-An on Kia Seltos Car reviews in R"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+### Setup
+
+Installing/loading required libraries.  
+
+```{r setup}
+
+# setup code block
+suppressPackageStartupMessages({
+if (!require(udpipe)){install.packages("udpipe")}
+if (!require(textrank)){install.packages("textrank")}
+if (!require(lattice)){install.packages("lattice")}
+if (!require(igraph)){install.packages("igraph")}
+if (!require(ggraph)){install.packages("ggraph")}
+if (!require(wordcloud)){install.packages("wordcloud")}
+if (!require(stringr)){install.packages("stringr")}
+if (!require(tidyverse)) {install.packages("tidyverse")}
+if (!require(tidytext)) {install.packages("tidytext")}
+if (!require(tidyr)) {install.packages("tidyr")}
+if (!require(tibble)) {install.packages("tibble")}  
+if (!require(sentimentr)) {install.packages("sentimentr")}
+if (!require(tm)) {install.packages("tm")}  
+if (!require(dplyr)) {install.packages("dplyr")}   
+if (!require(patchwork)) {install.packages("patchwork")}  
+  
+library(tm)  
+library(tidyverse)
+library(tidytext)
+library(tidyr)
+library(udpipe)
+library(textrank)
+library(lattice)
+library(igraph)
+library(ggraph)
+library(ggplot2)
+library(wordcloud)
+library(stringr)
+library(tibble)  
+library(sentimentr)  
+library(dplyr)
+library(patchwork)
+
+})
+
+```
+
+### Basic Tidytext Analysis on the Kia Seltos Reviews dataset
+
+```{r basic_func}
+
+# Getting data first
+
+reviews <- read.csv('E:\\AMPBA\\Modules\\Text Analytics\\Assignment\\SeltosCarReviews.csv', stringsAsFactors = FALSE)
+
+reviews_text <- reviews$Review.text
+
+reviews_text  =  gsub("<.*?>", " ", reviews_text)              # regex for removing HTML tags
+
+length(reviews_text)    # 827 documents/reviews
+
+irrelevant_words <- c("Kia","kia","seltos","Seltos","car","feature")
+
+reviews_text = removeWords(reviews_text,irrelevant_words)
+
+str(reviews_text)
+
+```
+
+### Tidytext word Tokenization with unnest_tokens()
+
+```{r tokenizing_kia_seltos_word}
+
+textdf = tibble(text = reviews_text) #  creating a dataframe
+
+# Tokenizing Words first.
+
+system.time({word_tokenized <- textdf %>% unnest_tokens(word, text)})
+
+head(word_tokenized) # There are total 33645 words are there in the Kia Seltos corpus  
+
+custom_stop_words <- bind_rows(stop_words, tibble(word = c("kia", "seltos","car"), lexicon = rep("custom", 3)))
+
+system.time({
+seltos_reviews_words = word_tokenized %>%  # tokenized words in df in 'word' colm
+        count(word, sort = TRUE) %>%   
+        rename(count = n)%>%          # renames the count column from 'n' (default name) to 'count'.
+        anti_join(custom_stop_words)              
+  })       
+
+
+# Analyzing the top words in the reviews using group and Visualizing the same via bar-charts
+
+seltos_reviews_words %>% head(., 10) # view top 10 rows in seltos_reviews_words df
+
+# First, build a datafame
+  seltos_reviews_words %>%          # counts & sorts no. of occurrences of each item in 'word' column 
+  filter(count > 75) %>%                    # n is wordcount colname. 
+  mutate(word = reorder(word, count)) %>%  # mutate() reorders columns & renames too
+  ggplot(aes(word, count)) +
+  geom_bar(stat = "identity", col = "red", fill = "red") +
+  xlab(NULL) +
+  coord_flip()
+
+# Analyzing the top words in the reviews using group and Visualizing the same via word cloud
+  
+# define a nice color palette
+
+pal <- brewer.pal(8,"Dark2")
+
+seltos_reviews_words %>% filter(count >10) %>%  with(wordcloud(word, count , random.order = FALSE, max.words = 50, colors=pal))
+
+```
+
+### Sentence tokenization using the `token = "sentences"` parm in `unnest_tokens`.
+
+```{r kia_seltos_token_sent}
+
+# Tokenizing into sentences.
+
+system.time({sent_tokenized = textdf %>% unnest_tokens(sentence, text, token = "sentences")})
+
+head(sent_tokenized) # There are total 2396 sentences in the kia seltos reviews corpus.
+
+```
+
+### Analyzing Data : How do customers view our product against competition ??
+
+
+```{r kia_seltos_competitor_anlaysis}
+
+HC <- read.csv('E:\\AMPBA\\Modules\\Text Analytics\\Assignment\\HectorCarReviews.csv', stringsAsFactors = FALSE)
+KS <- reviews
+JC <- read.csv('E:\\AMPBA\\Modules\\Text Analytics\\Assignment\\CompassCarReviews.csv', stringsAsFactors = FALSE)
+
+HC$Review.date <- as.Date(HC$Review.date, format="%b%d,%Y")
+KS$Review.date <- as.Date(KS$Review.date, format="%b%d,%Y")
+JC$Review.date <- as.Date(JC$Review.date, format="%b%d,%Y")
+
+car1 <- ggplot(data = HC,
+       aes(Review.date, Review.Star.Rating)) +
+  stat_summary(fun.y = mean,geom = "line")+
+  scale_x_date(
+    date_labels = "%Y-%m") + 
+  xlab("Reveiw Date") + ylab("Mean Review Rating") + labs(title = "MG Hector")
+car2 <- ggplot(data = KS,
+       aes(Review.date, Review.Star.Rating)) +
+  stat_summary(fun.y = mean,geom = "line")+
+  scale_x_date(
+    date_labels = "%Y-%m") + 
+  xlab("Reveiw Date") + ylab("Mean Review Rating") + labs(title = "Kia Seltos")
+
+car3 <- ggplot(data = JC,
+               aes(Review.date, Review.Star.Rating)) +
+  stat_summary(fun.y = mean,geom = "line")+
+  scale_x_date(
+    date_labels = "%Y-%m") + 
+  xlab("Reveiw Date") + ylab("Mean Review Rating") + labs(title = "Jeep Compass")
+
+
+
+car1 + car2 + car3
+  
+
+```
+
+
+### Basic udpipe functionality
+
+
+The building blocks of an *ideal* NLP workflow:  
+
++  1. Tokenisation
++  2. Parts of speech tagging
++  3. Lemmatisation
++  4. Morphological feature tagging
++  5. Syntactic dependency parsing
++  6. Named entity recognition (NER)
++  7. Extracting word & sentence meaning
+
+```{r english_model}
+
+# load english model for annotation from working dir
+
+english_model = udpipe_load_model("E:\\AMPBA\\Modules\\Text Analytics\\Session 4 Materials\\english-ewt-ud-2.4-190531.udpipe")  # file_model only needed
+ 
+# Annotating text dataset using ud_model above
+# system.time({   # ~ depends on corpus size
+  annotated_reviews_text <- udpipe_annotate(english_model, x = reviews_text)
+  annotated_reviews_text <- as.data.frame(annotated_reviews_text)
+#	})
+
+head(annotated_reviews_text, 4)
+
+```
+
+# Finding the most common nouns to get sense of the attributes/fetaures people are interested in
+
+```{r phrase_extr}
+
+ 
+all_nouns = annotated_reviews_text %>% subset(., upos %in% "NOUN") 
+top_nouns = txt_freq(all_nouns$lemma)  # txt_freq() calcs noun freqs in desc order
+
+head(top_nouns, 50)	
+
+wordcloud(words = top_nouns$key, 
+          freq = top_nouns$freq, 
+          min.freq = 2, 
+          max.words = 30,
+          random.order = FALSE, 
+          colors = brewer.pal(6, "Dark2"))
+
+```
+
+#Fetching noun phrases used by reviewers
+
+Using `as_phrasemachine()` to convert upos POSTags to simple one-letter POSTags for easier manipulation in code
+
+Phrases (A:adjective, N:noun, P:preposition).
+
+```{r noun_phrases}
+
+annotated_reviews_text$phrase_tag <- as_phrasemachine(annotated_reviews_text$upos, type = "upos")
+
+# Building noun phrases thus (a adjective+noun, pre/postposition, optional determiner and another adjective+noun)
+regexed_phrases <- keywords_phrases(x = annotated_reviews_text$phrase_tag, 
+                          term = annotated_reviews_text$token, 
+                          pattern = "(A|N)+N(P+D*(A|N)*N)*", 
+                          is_regex = TRUE, 
+                          ngram_max = 4, 
+                          detailed = FALSE)
+
+filtered_regexed_phrases <- subset(regexed_phrases , ngram > 1 & freq >3)
+
+filtered_regexed_phrases$key <- factor(filtered_regexed_phrases$keyword, levels = rev(filtered_regexed_phrases$keyword))
+
+barchart(key ~ freq, data = head(filtered_regexed_phrases, 20), col = "red", 
+         main = "Keywords - simple noun phrases", xlab = "Frequency")
+
+
+```
+
+### Keyword identification and extraction by using Cooccurrences and *visualizing* Co-occurrences at the same time.
+
+```{r coorc.visualizn}
+
+# Sentence Co-occurrences for nouns only
+kia_seltos_cooc <- cooccurrence(x = subset(annotated_reviews_text, upos %in% c("NOUN")), term = "lemma", 
+                      group = c("doc_id", "paragraph_id", "sentence_id"))
+
+
+# Visualising top-50 co-occurrences using a network plot
+
+wordnetwork <- head(kia_seltos_cooc, 50)
+wordnetwork <- igraph::graph_from_data_frame(wordnetwork) # needs edgelist in first 2 colms.
+
+ggraph(wordnetwork, layout = "fr") +  
+
+  geom_edge_link(aes(width = cooc, edge_alpha = cooc), edge_colour = "green") +  
+  geom_node_text(aes(label = name), col = "orange", size = 5) +
+   labs(title = "Cooccurrences within 3 words distance", subtitle = "Nouns")
+
+```
+
+
+### Sentiment analysis with sentimentR
+
+```{r sentiment_analysis}
+
+feature_list <- c('airbag', 'engine' , 'seat','price range' ,'driving experience','boot space','infotainment system','voice command' , 'touch screen' , 'air purifier', 'ground clearance' , 'sunroof', 'design' , 'interior' , 'value for money')
+
+df <- annotated_reviews_text[,1:4] # select doc_id, par_id, sentence_id, sentence
+
+df <- df[!duplicated(df),] # remove duplicate sentences
+
+sentiment<-sentiment_by(df$sentence)
+
+df$sent_sentiment <- sentiment$ave_sentiment
+
+head(df[,1:5])
+
+```
+
+```{r feature search}
+
+#filter sentences based on feature list
+df$feature<-NA
+
+# extracting sentiment of features to get maximum sentences
+df$sentence <- tolower(df$sentence) 
+
+for (feature in feature_list){
+  df$feature <- ifelse(grepl(feature,df$sentence),feature,df$feature)
+}
+
+head(df[!is.na(df$feature),])
+
+feature_sentiment <- df %>% select(doc_id,sent_sentiment,feature)%>%group_by(feature)%>%summarise(mean_sentiment = mean(sent_sentiment))
+
+feature_sentiment
+
+df%>%filter(feature=="price range")%>%select(sentence,sent_sentiment)
+
+
+```
+
+### Visualizing Sentiment over Doc length
+
+```{r sentiment visualization}
+
+p <- ggplot(df, aes(x = df$sentence_id, y = df$sent_sentiment)) + 
+geom_smooth(col="blue", se=FALSE) + geom_hline(yintercept=0) + 
+geom_smooth(method="lm", formula=y~x, col="red", se=FALSE) 
+p
+
+```
